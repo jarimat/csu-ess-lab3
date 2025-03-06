@@ -1,0 +1,239 @@
+---
+title: "Lab 3: COVID Wrangling"
+subtitle: "ESS 330"
+author: Jake Matullo
+format: html
+theme: classy
+---
+
+```{r}
+library(tidyverse)
+install.packages("zoo")
+library(zoo)
+install.packages("flextable")
+library(flextable)
+```
+
+**Question 1**
+Being able to easily access environmental data allows people to educate themselves on important challenged facing our nation. It also can help them understand why certain policy decisions are made. Without access, people aren't able understand these challenges better, and are left in the dark about the reasoning behind different environmental laws and policies. This can end up making people hostile towards these laws.
+
+**Question 2**
+```{r}
+library(tidyverse); library(flextable)
+data = read_csv('https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv')
+```
+```{r}
+txt <- "2022-02-01"
+my.date <- as.Date(txt)
+class(my.date)
+```
+```{r}
+colorado_data <- data %>%
+  filter(state == "Colorado")
+
+colorado_grouped <- colorado_data %>%
+  group_by(county) %>%
+  mutate(
+  daily_new_cases = cases - lag(cases, order_by = date),
+  daily_new_deaths = deaths - lag(deaths, order_by = date)
+)
+
+ungroup(colorado_grouped)
+```
+```{r}
+cumulative_cases <- colorado_grouped %>%
+  filter(date == my.date) %>%
+  group_by(county) %>%
+  summarise(cumulative_cases = max(cases, na.rm = TRUE)) %>%
+  arrange(desc(cumulative_cases)) %>%
+  top_n(5, cumulative_cases) %>%
+  flextable() %>%
+  set_caption(caption = "Most Cumulative Cases")
+
+print(cumulative_cases)
+```
+
+```{r}
+colorado_grouped <- colorado_data %>%
+  group_by(county) %>%
+  mutate(
+  daily_new_cases = cases - lag(cases, order_by = date),
+  daily_new_deaths = deaths - lag(deaths, order_by = date)
+)
+
+ungroup(colorado_grouped)
+```
+
+```{r}
+library(tidyverse)
+new_cases <- colorado_grouped %>%
+  filter(date == my.date) %>%
+  group_by(county) %>%
+  summarise(new_cases = sum(daily_new_cases, na.rm = TRUE)) %>%
+  arrange(desc(new_cases)) %>%
+  top_n(5, new_cases) %>%
+  flextable() %>%
+  set_caption(caption = "Most New Cases")
+print(new_cases)
+
+```
+
+**Question 3**`
+
+```{r}
+pop_url <- ('https://www2.census.gov/programs-surveys/popest/datasets/2020-2023/counties/totals/co-est2023-alldata.csv')
+pop <- read.csv(pop_url) %>%
+  filter(COUNTY !=0) %>%
+  mutate(fips = paste0(sprintf("%02d", STATE), sprintf("%03d", COUNTY))) %>%
+           select(fips, contains('NAME'), contains('2021'))
+```
+
+
+```{r}
+dim(compatible_data_cleaned)
+```
+```{r}
+attributes(compatible_data_cleaned)
+```
+
+After modifications were made, the data looks a little different. None of the column names match any found in the "data" data.frame, and there are 18 of them that hold 3195 rows of information. It's class is a data.frame as well.
+
+```{r}
+range(pop$POPESTIMATE2021)
+```
+The data range would be 5810855.
+
+```{r}
+colorado_group = inner_join(colorado_grouped, select(pop, fips, pop = POPESTIMATE2021), by =  'fips') %>%
+   filter(date == my.date) %>%
+   mutate(
+    per_capita_cumulative_cases = cases / pop,
+    per_capita_new_cases = daily_new_cases / pop,
+    per_capita_new_deaths = daily_new_deaths / pop)
+```
+
+```{r}
+select(colorado_group, "COUNTY" = "county")
+
+colorado_group = rename(colorado_group, Cases = per_capita_cumulative_cases)
+```
+```{r}
+top5_cumulative <- colorado_group %>%
+  ungroup() %>% 
+  slice_max(Cases, n = 5) %>%
+  flextable() %>%
+  set_caption(caption = "Top Five Most Cumulative Cases")
+
+print(top5_cumulative)
+```
+```{r}
+top5_most_new_cases <- colorado_group %>%
+  ungroup() %>%
+  slice_max(New_Cases, n = 5) %>%
+  flextable() %>%
+  set_caption(caption = "Top Five Most New Cases")
+
+print(top5_most_new_cases)
+```
+
+
+**Question 4**
+
+```{r}
+other_txt <- "2022-05-13"
+end_date <- as.Date(other_txt)
+
+fourteen_days_ago <- end_date - days(14)
+
+merged_data <- inner_join(pop, colorado_grouped, by = "fips")
+
+last_fourteen_days <- merged_data %>%
+  filter(date >= fourteen_days_ago) %>%
+  group_by(county) %>%
+  summarise(
+    total_new_cases = sum(daily_new_cases, na.rm = TRUE),
+    new_cases_per_100k = total_new_cases / 100000
+  )
+
+last_fourteen_days %>%
+  slice_max(total_new_cases, n = 5) %>%
+  flextable() %>%
+  set_caption("Cases within the last 14 days")
+```
+
+There are 17 counties that have had more than 100 cases within the last fourteen days of the dataset.
+
+**Question 5**
+
+```{r}
+all_deaths <- merged_data %>%
+  mutate(year = lubridate::year(date)) %>%
+  filter(year == 2021) %>%
+  group_by(CTYNAME) %>%
+  summarize(total_deaths = sum(daily_new_deaths, na.rm = TRUE)) %>%
+  left_join(pop, by = c("fips")) %>%
+  mutate(covid_deaths_ratio = 100 * total_deaths / DEATHS2021) %>%
+  select(CTYNAME, deaths, DEATHS2021, death_ratio) %>%
+  filter(death_ration >= 20)
+```
+
+**Question 6**
+
+```{r}
+state_covid <- data %>%
+  group_by(date, state) %>%
+  summarise(cases = sum(cases)) %>%
+  filter(state %in% c("New York", "Ohio", "Colorado", "Alabama")) %>%
+  group_by(state) %>%
+  mutate(newCases = cases - lag(cases), roll = zoo::rollmean(newCases, k = 7, align = "right", fill = NA)) %>%
+  ungroup()
+```
+Warning: Returning more (or less) than 1 row per `summarise()` group was deprecated in dplyr 1.1.0.
+Please use `reframe()` instead.
+When switching from `summarise()` to `reframe()`, remember that `reframe()` always returns an ungrouped data frame and adjust accordingly.
+```{r}
+ggplot(state_covid, aes(x = date)) +
+  geom_col(aes(y = newCases), fill = "red", col = NA) +
+  geom_line(aes(y = roll), col = "blue", size = 1) + 
+  theme_linedraw() +
+  facet_wrap(~state, nrow = 2, scales = "free_y") + 
+  labs(title = "Cumulative Covid Cases",
+       x = "Date", y = "Number of Cases")
+```
+
+```{r}
+pp = pop %>%
+  group_by(STNAME) %>%
+  summarise(state_pop = sum(POPESTIMATE2021)) %>%
+  inner_join(state_covid, by = c("STNAME"="state")) %>%
+  mutate(perCap = newCases / state_pop) %>%
+  group_by(STNAME) %>%
+  mutate(roll = zoo::rollmean(perCap, k = 7, align = "right", fill = NA)) %>%
+  ungroup()
+```
+
+**Question 7**
+
+```{r}
+meta = read_csv("https://raw.githubusercontent.com/mikejohnson51/csu-ess-330/refs/heads/main/resources/county-centroids.csv") %>%
+  inner_join(data) %>%
+  group_by(date) %>%
+  summarise(
+    wmX_c = sum(LON*cases) / sum(cases),
+    wmY_c = sum(LAT*cases) / sum(cases),
+    cases = sum(cases))%>%
+  arrange(date) %>%
+  mutate(d = 1:n())
+```
+```{r}
+ggplot(meta) +
+  borders("state", fill = "beige", colour = "darkgrey") +
+  geom_point(aes(x = wmX_c, y = wmY_c, size = cases), color = "red", alpha = .25) +
+  theme_linedraw() + 
+  labs(color = "Time",
+       size = "Cases",
+       x = "", y = "",
+       titlr = "Weighted Center of Covid Cases") +
+  theme(legend.position = "none")
+```
+

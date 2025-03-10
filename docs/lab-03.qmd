@@ -8,10 +8,12 @@ theme: classy
 
 ```{r}
 library(tidyverse)
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
 install.packages("zoo")
 library(zoo)
 install.packages("flextable")
 library(flextable)
+library(dplyr)
 ```
 
 **Question 1**
@@ -88,14 +90,6 @@ pop <- read.csv(pop_url) %>%
            select(fips, contains('NAME'), contains('2021'))
 ```
 
-
-```{r}
-dim(compatible_data_cleaned)
-```
-```{r}
-attributes(compatible_data_cleaned)
-```
-
 After modifications were made, the data looks a little different. None of the column names match any found in the "data" data.frame, and there are 18 of them that hold 3195 rows of information. It's class is a data.frame as well.
 
 ```{r}
@@ -129,7 +123,7 @@ print(top5_cumulative)
 ```{r}
 top5_most_new_cases <- colorado_group %>%
   ungroup() %>%
-  slice_max(New_Cases, n = 5) %>%
+  slice_max(per_capita_new_cases, n = 5) %>%
   flextable() %>%
   set_caption(caption = "Top Five Most New Cases")
 
@@ -169,12 +163,14 @@ There are 17 counties that have had more than 100 cases within the last fourteen
 all_deaths <- merged_data %>%
   mutate(year = lubridate::year(date)) %>%
   filter(year == 2021) %>%
-  group_by(CTYNAME) %>%
-  summarize(total_deaths = sum(daily_new_deaths, na.rm = TRUE)) %>%
+  group_by(CTYNAME, fips) %>%
+  summarize(total_deaths = sum(daily_new_deaths, na.rm = TRUE), .groups = "drop") %>%
   left_join(pop, by = c("fips")) %>%
-  mutate(covid_deaths_ratio = 100 * total_deaths / DEATHS2021) %>%
-  select(CTYNAME, deaths, DEATHS2021, death_ratio) %>%
-  filter(death_ration >= 20)
+    mutate(covid_deaths_ratio = 100 * total_deaths / DEATHS2021) %>%
+  select(CTYNAME = CTYNAME.x, total_deaths, DEATHS2021, covid_deaths_ratio) %>%
+  filter(covid_deaths_ratio >= 20)
+
+print(all_deaths)
 ```
 
 **Question 6**
